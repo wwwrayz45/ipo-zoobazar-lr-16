@@ -1,3 +1,19 @@
+from rest_framework.viewsets import ModelViewSet
+
+from .serializers import (
+    ProductSerializer,
+    CategorySerializer,
+    ManufacturerSerializer,
+    CartSerializer,
+    CartItemSerializer
+)
+from .models import (
+    Product,
+    Category,
+    Manufacturer,
+    Cart,
+    CartItem
+)
 from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404
 from django.db.models import Q
@@ -5,11 +21,13 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.core.mail import EmailMessage
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect
+from django.core.mail import EmailMessage
 
 from io import BytesIO
 import openpyxl
 
-from .models import Product, Cart, CartItem
 
 
 # ---------------- HOME ----------------
@@ -197,3 +215,26 @@ def checkout(request):
     items.delete()
 
     return HttpResponse("Заказ оформлен успешно!")
+class ProductViewSet(ModelViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+
+class CategoryViewSet(ModelViewSet):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+
+
+class ManufacturerViewSet(ModelViewSet):
+    queryset = Manufacturer.objects.all()
+    serializer_class = ManufacturerSerializer
+
+
+class CartViewSet(ModelViewSet):
+    queryset = Cart.objects.all()
+    serializer_class = CartSerializer
+
+
+class CartItemViewSet(ModelViewSet):
+    queryset = CartItem.objects.all()
+    serializer_class = CartItemSerializer
