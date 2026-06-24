@@ -1,12 +1,18 @@
-
 from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404
 from django.db.models import Q
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from django.core.mail import EmailMessage
+from django.conf import settings
+
+from io import BytesIO
+import openpyxl
 
 from .models import Product, Cart, CartItem
 
 
+# ---------------- HOME ----------------
 def home(request):
     return HttpResponse("""
     <h1>Zoobazar</h1>
@@ -15,6 +21,7 @@ def home(request):
     """)
 
 
+# ---------------- AUTHOR ----------------
 def author(request):
     return HttpResponse("""
     Автор лабораторной работы: Будько Дарья<br>
@@ -22,6 +29,7 @@ def author(request):
     """)
 
 
+# ---------------- SHOP INFO ----------------
 def shop_info(request):
     return HttpResponse("""
     <h2>О магазине Zoobazar</h2>
@@ -29,37 +37,7 @@ def shop_info(request):
     """)
 
 
-from django.http import HttpResponse
-from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
-from django.db.models import Q
-from django.contrib.auth.decorators import login_required
-
-from .models import Product, Cart, CartItem
-
-
-def home(request):
-    return HttpResponse("""
-    <h1>Zoobazar</h1>
-    <a href="/author/">Об авторе</a><br>
-    <a href="/shop/">О магазине</a>
-    """)
-
-
-def author(request):
-    return HttpResponse("""
-    Автор лабораторной работы: Будько Дарья<br>
-    Учебная группа: 87 ТП
-    """)
-
-
-def shop_info(request):
-    return HttpResponse("""
-    <h2>О магазине Zoobazar</h2>
-    <p>Zoobazar — сеть зоомагазинов в Беларуси.</p>
-    """)
-
-
+# ---------------- PRODUCTS ----------------
 def product_list(request):
     products = Product.objects.all()
 
@@ -79,56 +57,7 @@ def product_list(request):
             Q(description__icontains=search)
         )
 
-    return render(
-        request,
-        "shop/product_list.html",
-        {"products": products}
-    )
-
-
-def product_detail(request, pk):
-    product = get_object_or_404(Product, pk=pk)
-
-    return render(
-        request,
-        "shop/product_detail.html",
-        {"product": product}
-    )
-
-
-@login_required
-def cart_view(request):
-    cart, created = Cart.objects.get_or_create(
-        user=request.user
-    )
-
-    items = cart.cartitem_set.all()
-
-    total = sum(
-        item.item_price()
-        for item in items
-    )
-
-    return render(
-        request,
-        "shop/cart.html",
-        {
-            "items": items,
-            "total": total
-        }
-    )
-
-
-def add_to_cart(request, product_id):
-    return HttpResponse(f"Товар {product_id} добавлен в корзину")
-
-
-def update_cart_item(request, item_id):
-    return HttpResponse(f"Количество товара {item_id} обновлено")
-
-
-def remove_from_cart(request, item_id):
-    return HttpResponse(f"Товар {item_id} удалён из корзины")
+    return render(request, "shop/product_list.html", {"products": products})
 
 
 def product_detail(request, pk):
@@ -142,27 +71,22 @@ def product_detail(request, pk):
     """)
 
 
+# ---------------- CART ----------------
 @login_required
 def cart_view(request):
-    cart, created = Cart.objects.get_or_create(
-        user=request.user
-    )
+    cart, _ = Cart.objects.get_or_create(user=request.user)
+
+    items = cart.cartitem_set.all()
 
     result = "<h2>Корзина</h2>"
     total = 0
 
-    for item in cart.cartitem_set.all():
+    for item in items:
         cost = item.item_price()
-
-        result += (
-            f"{item.product.name} "
-            f"({item.quantity} шт.) "
-            f"= {cost}<br>"
-        )
-
+        result += f"{item.product.name} ({item.quantity}) = {cost}<br>"
         total += cost
 
-    result += f"<h3>Общая стоимость: {total}</h3>"
+    result += f"<h3>Итого: {total}</h3>"
 
     return HttpResponse(result)
 
@@ -171,52 +95,105 @@ def cart_view(request):
 def add_to_cart(request, product_id):
     product = get_object_or_404(Product, pk=product_id)
 
-    cart, created = Cart.objects.get_or_create(
-        user=request.user
-    )
+    cart, _ = Cart.objects.get_or_create(user=request.user)
 
     item, created = CartItem.objects.get_or_create(
         cart=cart,
         product=product,
-        defaults={'quantity': 1}
+        defaults={"quantity": 1}
     )
 
     if not created:
         item.quantity += 1
         item.save()
 
-    return HttpResponse("Товар добавлен в корзину")
+    return HttpResponse("Товар добавлен")
 
 
 @login_required
 def update_cart_item(request, item_id):
-    item = get_object_or_404(
-        CartItem,
-        pk=item_id,
-        cart__user=request.user
-    )
+    item = get_object_or_404(CartItem, pk=item_id, cart__user=request.user)
 
-    quantity = int(request.GET.get('quantity', 1))
+    quantity = int(request.GET.get("quantity", 1))
 
     if quantity > item.product.stock_quantity:
-        return HttpResponse(
-            "Количество превышает остаток на складе"
-        )
+        return HttpResponse("Нет столько товара на складе")
 
     item.quantity = quantity
     item.save()
 
-    return HttpResponse("Количество обновлено")
+    return HttpResponse("Обновлено")
 
 
 @login_required
 def remove_from_cart(request, item_id):
-    item = get_object_or_404(
-        CartItem,
-        pk=item_id,
-        cart__user=request.user
-    )
-
+    item = get_object_or_404(CartItem, pk=item_id, cart__user=request.user)
     item.delete()
 
-    return HttpResponse("Товар удалён из корзины")
+    return HttpResponse("Удалено из корзины")
+
+
+@login_required
+@transaction.atomic
+def checkout(request):
+    cart = Cart.objects.get(user=request.user)
+    items = cart.cartitem_set.select_related('product').all()
+
+    if request.method == "GET":
+        if not items.exists():
+            return HttpResponse("Корзина пуста", status=400)
+        return render(request, "shop/checkout.html")
+
+    if not items.exists():
+        return HttpResponse("Корзина пуста", status=400)
+
+    address = request.POST.get("address")
+    comment = request.POST.get("comment")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Чек"
+
+    ws.append(["Товар", "Кол-во", "Цена", "Сумма"])
+
+    total = 0
+
+    for item in items:
+        price = item.product.price
+        sum_item = price * item.quantity
+        total += sum_item
+
+        ws.append([
+            item.product.name,
+            item.quantity,
+            float(price),
+            float(sum_item)
+        ])
+
+    ws.append([])
+    ws.append(["Адрес", address])
+    ws.append(["Комментарий", comment])
+    ws.append(["ИТОГО", "", "", float(total)])
+
+    file_stream = BytesIO()
+    wb.save(file_stream)
+    file_stream.seek(0)
+
+    email = EmailMessage(
+        subject="Ваш чек заказа",
+        body=f"Спасибо за покупку!\nАдрес: {address}",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[request.user.email],
+    )
+
+    email.attach(
+        "receipt.xlsx",
+        file_stream.read(),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    email.send()
+
+    items.delete()
+
+    return HttpResponse("Заказ оформлен успешно!")
